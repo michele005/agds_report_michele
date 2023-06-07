@@ -1,0 +1,80 @@
+---
+title: "Report Exercise 3"
+author: "Michele Iannuzzo"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+Load the necessary libraries.
+```{r}
+library(tidyverse)
+library(dplyr)
+library(knitr)
+```
+
+
+In a first step, the data has been cleaned manually. The decomposition data file is the cleaned file.
+
+Now load the data and get rid of unnecessary columns and rows.
+```{r}
+decomposition <- read_delim("../data/decomposition.csv", delim = ";") #use read_delim so I can specify the delimiter
+
+decomposition <- subset(decomposition, select=c(1:15)) #remove unnecessary columns from dataframe
+decomposition <- decomposition[c(1:234),] #remove unnecessary rows
+decomposition #to see dataframe in console
+```
+The next step is to aggregate data per experiment.
+I herefore use the aggregate() function on the "decomposition" data frame. I list() the data frame according to the "Experiment" column and use the function FUN = mean so R will take the mean for each aggregate.
+Finally, I present the results as a table with the kable() function.
+```{r, warning=FALSE}
+#aggregate data per experiment
+aggregate_mean <- aggregate(decomposition,
+                         by = list(decomposition$Experiment),
+                         FUN = mean)
+knitr::kable(aggregate_mean)
+```
+Then I calculate the Log-respose ratio within each experiment.
+Therefore, I use the previously saved aggregates ("aggregate_mean"), group them with group_by(). "Group.1" are the different Experiments that were aggregated in the step before. As a last step, I use summarise() with the given formula to calcuolate the logarithmic response ratio. 
+Finally, I present the results as a table with the kable() function.
+```{r}
+#Log-response ratio
+decomposition_log <- aggregate_mean |>
+  group_by(Group.1) |>
+  summarise(RR = log(`mean increased CO2 [gCm-2]`/`mean ambient CO2 [gCm-2]`))
+
+knitr::kable(decomposition_log)
+```
+
+Now, I am going to aggregate data across all experiments for different years.
+As a first step, I have to mutate() the Time stamp, so I can aggregate the data according to the years. In a second step, I use the new data frame "agg_decomposition" with now in tidyverse readable years. I mutate() them again to assign all data points to one of the three time periods (<3 years, 3-6 years, >=6 years). In a last step, I aggregate the data by those three time periods ("phase"), again, with the function "mean", so R will take the mean over the phases.
+Finally, I present the results as a table with the kable() function.
+```{r, warning=FALSE}
+#Aggregate date per year 
+agg_decomposition <- decomposition |>
+  mutate(`Time (years)` = as.numeric(`Time (years)`))
+str(decomposition$`Time (years)`)
+
+agg_decomposition <- agg_decomposition |>
+  mutate(phase = if_else(agg_decomposition$`Time (years)` < 3,"<3 years", 
+                         if_else(agg_decomposition$`Time (years)` >=6, ">=6 years", "3-6 years")))
+
+agg_decomposition <- aggregate(agg_decomposition,
+                         by = list(agg_decomposition$phase),
+                         FUN = mean)
+
+knitr::kable(agg_decomposition)
+```
+
+And for the last step I will calculate the log-response ratio for each phase.
+As in the previous log-response calculation, I group by the three time periods and summarise() with the given formula.
+And finally, I present the results as a table with the kable() function.
+```{r}
+#Log-response ratio for each phase
+RR_decomposition <- agg_decomposition |>
+  group_by(Group.1) |>
+  summarise(RR = log(`mean increased CO2 [gCm-2]`/`mean ambient CO2 [gCm-2]`))
+
+knitr::kable(RR_decomposition)
+```
+
+

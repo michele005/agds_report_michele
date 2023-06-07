@@ -1,0 +1,167 @@
+---
+title: "Report Exercise 10"
+author: "Michele Iannuzzo"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    toc: true
+---
+# Setup and initial split
+
+In a first step I load all the libraries I will use for this exercise. Then, I read the data for Davos and Laegern sites. Because of the across-site predictions and the pooled data prediction latre on, I have to get rid of the columns that are only in one of the two data frames. I do that with the "select()" function and add a "-" in front of the columns I want to delete. Furthermore, I impute the NA values with the mean value because the NAs caused me trouble in some of the calculations. Finally, I split the data into training and testing sets for each site.
+```{r}
+# Load necessary libraries
+library(tidyverse)
+library(caret)
+library(rsample)
+library(tidyr)
+library(dplyr)
+library(purrr)
+
+# Read in the data for Davos and Laegern sites
+davos_data <- read_csv("../data/FLX_CH-Dav_FLUXNET2015_FULLSET_DD_1997-2014_1-3.csv")
+laegern_data <- read_csv("../data/FLX_CH-Lae_FLUXNET2015_FULLSET_DD_2004-2014_1-4.csv")
+
+# Tidy up the data
+davos_data <- davos_data |>
+  select(-TIMESTAMP,
+         -NETRAD,  #delete all columns that are not in both data sets
+         -NETRAD_QC,
+         -SW_OUT,
+         -SW_OUT_QC,
+         -LW_OUT,
+         -LW_OUT_QC) |>
+  mutate_all(~ ifelse(is.na(.), mean(., na.rm = TRUE), .)) #to impute NAs with the mean value
+laegern_data <- laegern_data |>
+  select(-TIMESTAMP,
+         -TS_F_MDS_4,
+         -TS_F_MDS_5,
+         -TS_F_MDS_4_QC,
+         -TS_F_MDS_5_QC,
+         -SWC_F_MDS_4,
+         -SWC_F_MDS_4_QC) |>
+  mutate_all(~ ifelse(is.na(.), mean(., na.rm = TRUE), .))
+
+# Set random seed for reproducibility
+set.seed(1999)
+
+# Split the data into training and testing sets for each site
+davos_split <- initial_split(davos_data, prop = 0.8)
+davos_train <- training(davos_split)
+davos_test <- testing(davos_split)
+
+laegern_split <- initial_split(laegern_data, prop = 0.8)
+laegern_train <- training(laegern_split)
+laegern_test <- testing(laegern_split)
+```
+
+# Define KNN model
+
+Here I define the KNN model with the funcion "train()" for each site.
+```{r}
+# Define the KNN model and tune the value of K for Davos
+knn_model_davos <- train(GPP_NT_VUT_MEAN ~ ., data = davos_train,
+                   method = "knn",
+                   trControl = trainControl(method = "none"),
+                   metric = "RMSE")
+
+# Define the KNN model and tune the value of K for Laegern
+knn_model_laegern <- train(GPP_NT_VUT_MEAN ~ ., data = laegern_train,
+                   method = "knn",
+                   trControl = trainControl(method = "none"),
+                   metric = "RMSE")
+```
+
+# Within-site and across-site predictions
+
+To make within-site and across-site prediction I first have to make predictions on the test set for each site using the "predict()" function. Then I want to compare within-site and across-site predictions using different metrics. Therefore, I use the mean squared error (MSE) and the mean absolute error (MAE). After the initial predict I can make within-site and across-site prediction.
+```{r}
+# Make predictions on the test set for each site
+davos_pred <- predict(knn_model_davos, newdata = davos_test)
+laegern_pred <- predict(knn_model_laegern, newdata = laegern_test)
+
+# Within-site predictions for Davos
+mse_davos_within <- mean((davos_pred - davos_test$GPP_NT_VUT_MEAN)^2)
+mae_davos_within <- mean(abs(davos_pred - davos_test$GPP_NT_VUT_MEAN))
+
+# Within-site predictions for Laegern
+mse_laegern_within <- mean((laegern_pred - laegern_test$GPP_NT_VUT_MEAN)^2)
+mae_laegern_within <- mean(abs(laegern_pred - laegern_test$GPP_NT_VUT_MEAN))
+
+# Across-site predictions from Davos to Laegern
+laegern_pred_davos <- predict(knn_model_davos, newdata = laegern_test)
+mse_laegern_davos <- mean((laegern_pred_davos - laegern_test$GPP_NT_VUT_MEAN)^2)
+mae_laegern_davos <- mean(abs(laegern_pred_davos - laegern_test$GPP_NT_VUT_MEAN))
+
+# Across-site predictions from Laegern to Davos
+davos_pred_laegern <- predict(knn_model_laegern, newdata = davos_test)
+mse_davos_laegern <- mean((davos_pred_laegern - davos_test$GPP_NT_VUT_MEAN)^2)
+mae_davos_laegern <- mean(abs(davos_pred_laegern - davos_test$GPP_NT_VUT_MEAN))
+```
+
+# Pooled data
+
+In the first step I pool the date with "bind_rows()". Then I do the same steps as above - initial_split(), training(), and testing() - with the pooled_data and create a pooled_model where I train the new model for the pooled data. After defining the model, I can make predictions on the test sets for both sites and compare the within-site predictions using mean squared error (MSE) and mean absolute error (MAE).
+```{r}
+# Train a single model on pooled data and predict on both test sets
+pooled_data <- bind_rows(davos_data, laegern_data)
+
+# Set random seed for reproducibility
+set.seed(1999)
+
+pooled_split <- initial_split(pooled_data, prop = 0.8)
+pooled_train <- training(pooled_split)
+pooled_test <- testing(pooled_split)
+
+pooled_model <- train(GPP_NT_VUT_MEAN ~ ., data = pooled_train,
+                      method = "knn",
+                      trControl = trainControl(method = "none"),
+                      metric = "RMSE")
+
+# Make predictions on the test sets for both sites
+davos_pred_pooled <- predict(pooled_model, newdata = davos_test)
+laegern_pred_pooled <- predict(pooled_model, newdata = laegern_test)
+
+# Within-site predictions for Davos using pooled model
+mse_davos_pooled_within <- mean((davos_pred_pooled - davos_test$GPP_NT_VUT_MEAN)^2)
+mae_davos_pooled_within <- mean(abs(davos_pred_pooled - davos_test$GPP_NT_VUT_MEAN))
+
+# Within-site predictions for Laegern using pooled model
+mse_laegern_pooled_within <- mean((laegern_pred_pooled - laegern_test$GPP_NT_VUT_MEAN)^2)
+mae_laegern_pooled_within <- mean(abs(laegern_pred_pooled - laegern_test$GPP_NT_VUT_MEAN))
+```
+
+# Results
+```{r}
+library(knitr)
+
+# Define the metrics for the true out-of-sample setup and single model trained on pooled data
+metrics <- c("MSE", "MAE")
+
+# Create a data frame with the results
+results <- data.frame(
+  Location = c("Within-Site Davos", "Within-Site Laegern", "Within-Site Davos pooled", "Within-Site Laegern pooled", "Across-Site Davos", "Across-Site Laegern"),
+  MSE = c(mse_davos_within, mse_laegern_within, mse_davos_pooled_within, mse_laegern_pooled_within, mse_davos_laegern, mse_laegern_davos),
+  MAE = c(mae_davos_within, mae_laegern_within, mae_davos_pooled_within, mae_laegern_pooled_within, mae_davos_laegern, mae_laegern_davos))
+
+# Print the table using kable
+kable(results, caption = "Model Metrics Comparison")
+```
+
+
+#### How do the model metrics on the test set with the pooled data compare to the true out-of-sample setup above? Interpret differences.
+Like one can see on the table above, the model metrics using the pooled predictions seem to be better predictions than the out-of-sample ones. The mean squared error (MSE) and the mean absolute error (MAE) both are lower for both sites - Davos and Laegern - using the pooled data. Compared with across-site predictions, the within-site predictions for MSE and MAE are significantly better. The across-site predictuions resulted high errors.
+
+#### Is it a valid approach to perform model training like this?
+Performing model training by pooling the data from different sites and training a single model can be a valid approach. But it only works if the two sites have similar data. Otherwise, this could lead to biases or unreliable results. Also it helps to check if the data from one site has a good generalizability on the other site by validating the across-site predictions. In my example the across-site predictions showed high errors both in MSE and MAE, therefore, the pooled predictions might not be the most reliable for those two sites.
+
+# Characteristics of the two sites
+#### What are the differences in terms of climate, vegetation, altitude, etc. between the Davos and Laegern sites?
+Davos: The climate in this location is a tundra climate, which means that the temperatures are very low throughout the year. Over the course of a year, the precipitation amounts to 1451 mm (source: https://de.climate-data.org/europa/schweiz/graubuenden/davos-7206/). Davos is located at an elevation of 1560 meters above sea level. Of its area, about 35.0% is used for agricultural purposes, 22.2% is forested, and and 40.5% is unproductive land (source: https://en.wikipedia.org/wiki/Davos).
+
+Laegern: Laegern has a warmer climate than Davos with a yearly average of 10.5°C. It is a wooded mountain of the Jura Mountains. It is located at an elevation of 866 meters above sea level and is therefore lower than Davos. (source: https://en.wikipedia.org/wiki/L%C3%A4gern).
+
+#### Interpret biases of the out-of-sample predictions with a view to the site characteristics.
+Climate: Davos experiences a tundra climate with very low temperatures throughout the year, while Laegern has a warmer climate with an average yearly temperature of 10.5°C. This difference in climate can introduce biases in the out-of-sample predictions, as the models trained on one site (e.g., Davos) may not capture the temperature variations and patterns accurately for the other site (e.g., Laegern).
+
+Altitude: Davos is situated at an elevation of 1560 meters above sea level, whereas Laegern is lower in altitude at 866 meters. The difference in elevation can influence various climatic and ecological factors, such as temperature gradients, air pressure, and vegetation types. Therefore, predictions made across sites may exhibit biases due to the dissimilarities in altitude.

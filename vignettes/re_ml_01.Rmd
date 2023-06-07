@@ -1,0 +1,175 @@
+---
+title: "Report Exercise 9"
+author: "Michele Iannuzzo"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    toc: true
+---
+# Comparison of the linear regression and KNN models
+
+Load libraries. This is important, so R knows which library to take the functions from. Especially functions that exist in multiple libraries. Plus, I import the function eval_model which is saved to a seperate R script.
+```{r}
+library(tidyverse)
+library(recipes)
+library(caret)
+
+source("../R/eval_model.R")
+```
+
+Import Data I'm going to use in this report exercise. And plot the data in a ggplot for a brief overview.
+```{r, warning=FALSE}
+daily_fluxes <- read_csv("../data/FLX_CH-Dav_FLUXNET2015_FULLSET_DD_1997-2014_1-3.csv")
+
+# Data cleaning: looks ok, no obviously bad data
+# no long tail, therefore no further target engineering
+daily_fluxes |> 
+  ggplot(aes(x = GPP_NT_VUT_REF, y = ..count..)) + 
+  geom_histogram()
+```
+Prepare the data with splitting for the training of the model. Set a seed for reproducability. Define linear regression model and KNN model.
+```{r, warning=FALSE}
+# Data splitting
+set.seed(1982)  # for reproducibility
+split <- rsample::initial_split(daily_fluxes, prop = 0.7, strata = "VPD_F")
+daily_fluxes_train <- rsample::training(split)
+daily_fluxes_test <- rsample::testing(split)
+
+# Model and pre-processing formulation, use all variables but LW_IN_F
+pp <- recipes::recipe(GPP_NT_VUT_REF ~ SW_IN_F + VPD_F + TA_F, 
+                      data = daily_fluxes_train |> drop_na()) |> 
+  recipes::step_BoxCox(all_predictors()) |> 
+  recipes::step_center(all_numeric(), -all_outcomes()) |>
+  recipes::step_scale(all_numeric(), -all_outcomes())
+
+# Fit linear regression model
+mod_lm <- caret::train(
+  pp, 
+  data = daily_fluxes_train |> drop_na(), 
+  method = "lm",
+  trControl = caret::trainControl(method = "none"),
+  metric = "RMSE"
+)
+
+# Fit KNN model
+mod_knn <- caret::train(
+  pp, 
+  data = daily_fluxes_train |> drop_na(), 
+  method = "knn",
+  trControl = caret::trainControl(method = "none"),
+  tuneGrid = data.frame(k = 8),
+  metric = "RMSE"
+)
+```
+
+Use the function with linear regression model.
+```{r}
+# linear regression model
+eval_model(mod = mod_lm, df_train = daily_fluxes_train, df_test = daily_fluxes_test)
+```
+
+Use function with KNN model.
+```{r}
+# KNN
+eval_model(mod = mod_knn, df_train = daily_fluxes_train, df_test = daily_fluxes_test)
+```
+
+## Interpretation
+
+#### "Why is the difference between the evaluation on the training and the test set larger for the KNN model than for the linear regression model?"
+
+KNN makes predictions based on the similarity of neighboring data points. It does not make any assumptions about the underlying data distribution. KNN creates a local approximationn of the target function in the training phase. This makes KNN capable of capturing complex relationships in the training data. However, this can also lead to overfitting, where the model becomes too similar to the training data and performs poorly on unseen data. As a result, the KNN model tends to have a larger difference between the training and test set performance, indicating higher variance.
+
+Linear regression assumes a linear relationship between the predictors and the target variable. It estimates the coefficients of the linear equation that best fits the training data. Linear regression is less flexible than KNN and tends to have lower variance. The model's performance on the training and test sets is usually closer because the linear regression model makes assumptions about the data and tries to find a global approximation of the target function. Therefore, there are smaller differences between the training and test sets.
+
+
+#### "Why does the evaluation on the test set indicate a better model performance of the KNN model than the linear regression model?"
+
+KNN is a non-parametric model that can capture complex, non-linear relationships in the data. It does not make assumptions about the data distribution or the linearity of the relationships. Therefore, if the true underlying relationship in the data is non-linear, KNN has a higher chance of capturing it accurately. In such cases, the KNN model may outperform linear regression, leading to better model performance on the test set.
+
+Linear regression, on the other hand, assumes a linear relationship between the predictors and the target variable. If the true relationship in the data is indeed linear, linear regression is well-suited to capture it and can provide accurate predictions. However, if the true relationship is non-linear, linear regression may struggle to capture the complexity, leading to poorer model performance on the test set compared to KNN.
+
+#### "How would you position the KNN and the linear regression model along the spectrum of the bias-variance trade-off?"
+
+KNN tends to have lower bias compared to linear regression as it can model complex relationships in the data without making assumptions about linearity. However, KNN has higher variance due to its flexibility in fitting the training data closely, making it prone to overfitting.
+
+Linear regression makes assumptions about linearity and aims to find a global approximation of the target function. It tends to have higher bias compared to KNN because it assumes a linear relationship. However, linear regression has lower variance as it is less prone to overfitting.
+
+Therefore, in the spectrum of the bias-variance trade-off, KNN is positioned towards the high variance end and linear regression is positioned towards the high bias end.
+
+
+# The role of k
+
+## Hypothesis
+
+##### Hypothesis 1 (k approaching 1):
+
+The R-squared value will be high and the MAE low on the training set.
+
+##### Hypothesis 2 (k approaching N):
+
+The R-squared value will be low and the MAE high on the training set.
+
+##### Explanation:
+
+In KNN, the value of k controls the trade-off between model bias and variance. A smaller k value (approaching 1) increases model flexibility, reducing bias but increasing variance. This can lead to overfitting. Conversely, a larger k value (approaching N) decreases model flexibility, increasing bias but reducing variance. This can result in underfitting.
+
+## Test of hypothesis
+
+First, I load the necessary libraries. This time I have to import my function "calculate_mae" as well. This function is save in a seperate R file. Then, I read the data set and split the data into training an test sets. I define the range of k values (from 1 to 10) and calculate the MAE for different k values. To visualize the results, I create a data frame with the k values and corresponding MAE and plot the result with "ggplot".
+```{r}
+library(tidyverse)
+library(caret)
+library(purrr)
+library(ggplot2)
+library(rsample)
+
+source("../R/calculate_mae.R") #function to calculate the MAE value of VPD_F using KNN
+
+#read data set
+data <- read_csv("../data/FLX_CH-Dav_FLUXNET2015_FULLSET_DD_1997-2014_1-3.csv")
+
+#split the data into a training and test set
+set.seed(123)
+data_split <- rsample::initial_split(data, prop = 0.7)
+train <- training(data_split)
+test <- testing(data_split)
+
+#define range of k values to test
+k_values <- 1:10
+
+#calculate MAE for different k values
+mae_values <- map_dbl(k_values, calculate_mae, .progress=TRUE) #this takes a long time to render
+
+#create a data frame with k values and corresponding MAE
+results <- tibble(k = k_values, MAE = mae_values)
+
+#visualize the results
+ggplot(results, aes(x = k, y = MAE)) +
+  geom_point() +
+  geom_line() +
+  labs(x = "Model Complexity (k)", y = "MAE") +
+  ggtitle("Model Generalizability vs. Model Complexity")
+```
+
+## Discussion of Hypothesis
+#### Hypothesis 1
+As explained above, a small k reduces the bias but increases the model variance, which could lead to overfitting. In the visualization this is shown with a high MAE value for k=1, indicating that the model is overfitted.
+
+#### Hypothesis 2
+A larger k (approaching N) on the other hand increases the bias but decreases the model variance. This could lead to underfitting. In the visualization we see an increase of the MAE value from k=3 onwards. This means the model becomes underfitted for k approaching N (in this case k=10).
+
+Ideally, in the bias-variance trade-off, we seek a model that achieves a low overall error, represented by a low MAE. This can be achieved by finding a balance between bias and variance, where the model captures the underlying patterns without being overly simplistic or overly complex. The lowest MAE is achieved for k=3. A good bias-variance level could be between k=2 and k=5. For k lower than 2 and higher than 5, the MAE value increases strongly.
+
+## Optimal k?
+
+First, I import the function "find_optimal_k" which is save in a seperate R file. Then, I define the k values from 1 to 10 and search for the optimal k using the function "find_optimal_k". Finally, I print the result.
+```{r, warning=FALSE}
+source("../R/find_optimal_k.R")
+
+#test for k values from 1 to 10
+k_values <- 1:10
+optimal_k <- find_optimal_k(k_values)
+print(paste("The optimal k is:", optimal_k))
+```
+To find the optimal k, I wanted to find the lowest MAE value. Therefore, I use the function "find_optimal_k" where I calculate the lowest MAE value on the test set for k values from 1 to 10. The result shows an optimal k of 10. This is surprising, because based on my calculation above and visible in the visualization, the lowest MAE value should be k=3.

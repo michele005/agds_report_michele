@@ -1,0 +1,102 @@
+---
+title: "Report Exercise 4"
+author: "Michele Iannuzzo"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+Loading the necessary libraries.
+```{r}
+library(tidyverse)
+library(dplyr)
+library(lubridate)
+```
+
+
+Import the dataset 'airquality' from datasets and do some basic analysis of the data.
+```{r}
+airquality <- datasets::airquality
+
+range(airquality$Temp)
+mean(airquality$Temp)
+median(airquality$Temp)
+cor.test(airquality$Temp, airquality$Ozone)
+```
+
+# Description of the data
+At first, I analyzed the temperature of the datasets::airquality data frame. To get a brief overview of the temperature range I used the function range(). The temperature in this dataset ranges from 56°F to 97°F. Then I analyzed the overall mean temperature with the function mean(). The mean temperature of the dataset is 77.88°F. To check if there are a lot of outliers I calculated the median temperature with the function median() because the median is not influenced by outliers. The median lies with 79°F a bit higher than the mean temperature which means that the dataset has more outliers in lower temperatures.
+
+
+# 4 figures to interpret the data
+```{r}
+#Boxplot + jitter points, monthly
+airquality_subset <- airquality |>
+  mutate(month = month(Month, label = TRUE)) |>
+  group_by(month)
+
+ggplot(
+  data = airquality_subset,
+  aes(x = month, y = Temp)) +
+  geom_boxplot(fill = "grey70", outlier.shape = NA) +
+  geom_jitter(width = 0.2, alpha = 0.3) +
+  labs(title = "Fig. 1: Boxplot + jitter points, Temperature",
+       y = 'Temperature in °F') +
+  theme_classic()
+
+#Boxplot + jitter points, monthly
+airquality_subset <- airquality |>
+  mutate(month = month(Month, label = TRUE)) |>
+  group_by(month)
+
+ggplot(
+  data = airquality_subset,
+  aes(x = month, y = Ozone)) +
+  geom_boxplot(fill = "grey70", outlier.shape = NA) +
+  geom_jitter(width = 0.2, alpha = 0.3) +
+  labs(title = "Fig. 2: Boxplot + jitter points, Ozone",
+       y = 'Ozone') +
+  theme_classic()
+
+#linear regression of Temperature and Solar Radiation
+ggplot(
+  data = airquality,
+  aes(x = Temp, y = Ozone))+
+  geom_point(size = 0.75) +
+  geom_smooth(method = 'lm', color = 'red') +
+  labs(title = 'Fig. 3: Linear Regression of Temperature and Ozone',
+       x = 'Temperature in °F',
+       y = 'Ozone') +
+  theme_classic()
+  
+cor.test(airquality$Temp, airquality$Ozone)
+
+#multiple linear regression
+airquality <- airquality |>
+  dplyr::mutate(month = month(Month, label = TRUE))
+
+ggplot(
+  data = airquality,
+  aes(x = Temp, y = Ozone, color = month)) +
+  geom_point(alpha = 0.5) +
+  geom_smooth(formula = y ~ x, method = "lm", se = FALSE) +
+  labs(title = 'Fig. 4: Regression categorised by month',
+       x = 'Temperature in °F', 
+       y = 'Ozone') +
+  theme_classic() +
+  scico::scale_color_scico_d(palette = "romaO")
+```
+
+
+# Interpretation and discussion of the results and hypothesis
+For this analysis I’m going to examine the correlation between the temperature and the ozone level for the R dataset “airquality”. I use ozone as an indicator for the air quality. If the ozone level is high, the air quality is low. From the observations above I came up with the following hypothesis:
+
+The air quality is worse in months with higher temperatures.
+
+In fig. 1 and fig. 2 it’s possible to make some basic observations. Fig. 1 shows boxplots of the temperature per month for the given period (May to September). It is obvious that the median temperature rises from May and reaches its maximum in July and then declines again until September. Fig. 2 shows boxplots of the ozone per month during that same period. Compared to the temperature one can observe the same pattern. The median ozone rises from May, reaches a maximum in July, and declines until September. Out of this observation I assume a positive correlation between temperature and ozone, which will be further examined in the following.
+
+In fig. 3 one can see a linear regression of the temperature and the ozone. It looks like a positive correlation. And I will test this with a correlation test. The p-value is < 2.2e-16. It is smaller than 0.05 and therefore statistically significant. The correlation coefficient is positive (cor = 0.6983603). So, I can confirm that there is a positive correlation between the temperature and the ozone.
+
+If I split this linear regression into the months, I can still observe a positive correlation for each month separately (fig. 4).
+
+I defined ozone as an indicator for the air quality. If there is more ozone in the atmosphere the air quality is worse. With the observations and calculations made above the hypothesis can be confirmed. The median temperature (fig. 1) and the median ozone (fig. 2) show a similar pattern where they each reach a maximum in July. They correlate positively overall (fig. 3) and correlate positively in each month separately (fig. 4). Therefore, it’s safe to say that the air quality is worse in months with higher temperatures.
+
